@@ -1,4 +1,4 @@
-import type { BareHeaders } from './requestUtil';
+import type { BareHeaders } from './requestUtil.js';
 
 export interface MetaV1 {
 	v: 1;

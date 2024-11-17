@@ -1,5 +1,5 @@
-import type { BareRemote } from './remoteUtil';
-import type { BareHeaders } from './requestUtil';
+import type { BareRemote } from './remoteUtil.js';
+import type { BareHeaders } from './requestUtil.js';
 
 export interface BareV1Meta {
 	remote: BareRemote;
