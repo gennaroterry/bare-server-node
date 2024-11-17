@@ -15,6 +15,9 @@ import type WebSocket from 'ws';
 // @internal
 import type { JSONDatabaseAdapter } from './Meta.js';
 import { nullMethod } from './requestUtil.js';
+import { LookupFunction } from 'node:net';
+import { fileURLToPath } from 'url';
+import path from 'path';
 
 export interface BareRequest extends Request {
 	native: IncomingMessage;
@@ -37,6 +40,8 @@ export class BareError extends Error {
 	}
 }
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 export const pkg = JSON.parse(
 	readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'),
 ) as { version: string };
@@ -111,15 +116,7 @@ export interface Options {
 	 * May not get called when remote.host is an IP
 	 * Use in combination with filterRemote to block IPs
 	 */
-	lookup: (
-		hostname: string,
-		options: LookupOneOptions,
-		callback: (
-			err: NodeJS.ErrnoException | null,
-			address: string,
-			family: number,
-		) => void,
-	) => void;
+	lookup: LookupFunction;
 	localAddress?: string;
 	family?: number;
 	maintainer?: BareMaintainer;

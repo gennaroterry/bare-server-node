@@ -1,7 +1,7 @@
 import { lookup } from 'node:dns';
 import { Agent as HttpAgent } from 'node:http';
 import { Agent as HttpsAgent } from 'node:https';
-import { isValid, parse } from 'ipaddr.js';
+import ipaddr from 'ipaddr.js';
 import { WebSocketServer } from 'ws';
 import BareServer from './BareServer.js';
 import type { BareMaintainer, Options } from './BareServer.js';
@@ -85,7 +85,7 @@ export function createBareServer(directory: string, init: BareServerInit = {}) {
 		init.filterRemote ??= (url) => {
 			// if the remote is an IP then it didn't go through the init.lookup hook
 			// isValid determines if this is so
-			if (isValid(url.hostname) && parse(url.hostname).range() !== 'unicast')
+			if (ipaddr.isValid(url.hostname) && ipaddr.parse(url.hostname).range() !== 'unicast')
 				throw new RangeError('Forbidden IP');
 		};
 
@@ -94,7 +94,7 @@ export function createBareServer(directory: string, init: BareServerInit = {}) {
 				if (
 					address &&
 					toAddressArray(address, family).some(
-						({ address }) => parse(address).range() !== 'unicast',
+						({ address }) => ipaddr.parse(address).range() !== 'unicast',
 					)
 				)
 					callback(new RangeError('Forbidden IP'), '', -1);
@@ -134,8 +134,8 @@ export function createBareServer(directory: string, init: BareServerInit = {}) {
 	init.legacySupport ??= true;
 
 	if (init.legacySupport) {
-		registerV1(server);
-		registerV2(server);
+	 	registerV1(server);
+	 	registerV2(server);
 	}
 
 	registerV3(server);
