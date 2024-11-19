@@ -1,4 +1,3 @@
-import { Readable } from 'node:stream';
 import type WebSocket from 'ws';
 import type { MessageEvent } from 'ws';
 import type {
@@ -10,14 +9,16 @@ import { BareError } from './BareServer.js';
 import type Server from './BareServer.js';
 import {
 	flattenHeader,
-	mapHeadersFromArray,
-	rawHeaderNames,
 } from './headerUtil.js';
 import { remoteToURL, urlToRemote } from './remoteUtil.js';
 import type { BareHeaders } from './requestUtil.js';
-import { bareFetch, nullBodyStatus, webSocketFetch } from './requestUtil.js';
+import { nullBodyStatus, webSocketFetch } from './requestUtil.js';
 import { joinHeaders, splitHeaders } from './splitHeaderUtil.js';
 import type { SocketClientToServer, SocketServerToClient } from './V3Types.js';
+
+import { fetch } from '@ossiana/node-libcurl'
+import { LibCurlHeadersInfo, LibCurlMethodInfo } from '@ossiana/node-libcurl/dist/libcurl.js';
+import { STATUS_CODES } from 'http';
 
 const forbiddenSendHeaders = [
 	'connection',
@@ -251,46 +252,89 @@ const tunnelRequest: RouteCallback = async (request, res, options) => {
 
 	loadForwardedHeaders(forwardHeaders, sendHeaders, request);
 
-	const response = await bareFetch(
-		request,
-		abort.signal,
-		sendHeaders,
-		remote,
-		options,
-	);
+	if (options.filterRemote) await options.filterRemote(remote);
+
+	// TODO:: IP filter. TLS fingerprint passthrough (Use the TLS fingerprint from client)
+
+	// Convert Body to Uint8Array with a size limit of 10MB
+	let body: Uint8Array | undefined = undefined;
+	if (request.body) {
+		const reader = request.body.getReader();
+		const chunks: Uint8Array[] = [];
+		let totalLength = 0;
+		const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (value) {
+				totalLength += value.length;
+				if (totalLength > MAX_SIZE) {
+					throw new BareError(413, {
+						code: 'PAYLOAD_TOO_LARGE',
+						id: 'request.body',
+						message: 'Request body exceeds the maximum allowed size of 10MB.',
+					});
+				}
+				chunks.push(value);
+			}
+		}
+		body = new Uint8Array(totalLength);
+		let offset = 0;
+		for (const chunk of chunks) {
+			body.set(chunk, offset);
+			offset += chunk.length;
+		}
+	}
+
+	let response = await fetch(remote, {
+		method: request.method as LibCurlMethodInfo,
+		headers: sendHeaders as LibCurlHeadersInfo,
+		body: body ? body : undefined,
+		httpVersion: 1,
+		redirect: false,
+        autoSortRequestHeaders: true,
+	});
+
+	const buffer = await response.arraybuffer()
+	const headers: Headers = await response.headers();
 
 	const responseHeaders = new Headers();
 
 	for (const header of passHeaders) {
-		if (!(header in response.headers)) continue;
-		responseHeaders.set(header, flattenHeader(response.headers[header]!));
+		if (!(header in headers)) continue;
+		responseHeaders.set(header, flattenHeader(headers.get(header)!));
 	}
 
-	const status = passStatus.includes(response.statusCode!)
-		? response.statusCode!
-		: 200;
-
+	const status = response.status();
 	if (status !== cacheNotModified) {
-		responseHeaders.set('x-bare-status', response.statusCode!.toString());
-		responseHeaders.set('x-bare-status-text', response.statusMessage!);
+		responseHeaders.set('x-bare-status', status.toString());
+		responseHeaders.set('x-bare-status-text', STATUS_CODES[status] || 'Unknown Status');  
 		responseHeaders.set(
 			'x-bare-headers',
-			JSON.stringify(
-				mapHeadersFromArray(rawHeaderNames(response.rawHeaders), {
-					...(<BareHeaders>response.headers),
-				}),
-			),
+			JSON.stringify(headersToObject(headers)),
 		);
 	}
 
+	const httpStatus = passStatus.includes(status!)
+	? status!
+	: 200;
 	return new Response(
-		nullBodyStatus.includes(status) ? undefined : Readable.toWeb(response),
+		nullBodyStatus.includes(status) ? undefined : buffer,
 		{
-			status,
+			status: httpStatus,
 			headers: splitHeaders(responseHeaders),
-		},
+		}
 	);
 };
+
+function headersToObject(headers: Headers): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [key, value] of headers.entries()) {
+        result[key] = value;
+    }
+    return result;
+}
 
 function readSocket(socket: WebSocket): Promise<SocketClientToServer> {
 	return new Promise((resolve, reject) => {

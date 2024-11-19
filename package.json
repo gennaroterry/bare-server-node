@@ -38,6 +38,7 @@
 		"dev": "tsc --watch"
 	},
 	"dependencies": {
+		"@ossiana/node-libcurl": "^1.6",
 		"async-exit-hook": "^2.0.1",
 		"commander": "^12.1.0",
 		"dotenv": "^16.4.5",
